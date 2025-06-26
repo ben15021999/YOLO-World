@@ -102,8 +102,9 @@ def inference_detector(model,
     with autocast(enabled=use_amp), torch.no_grad():
         output = model.test_step(data_batch)[0]
         pred_instances = output.pred_instances
-        pred_instances = pred_instances[pred_instances.scores.float() >
-                                        score_thr]
+    
+    pred_instances = pred_instances[pred_instances.scores.float() >
+                                    score_thr]
 
     if len(pred_instances.scores) > max_dets:
         indices = pred_instances.scores.float().topk(max_dets)[1]
@@ -120,7 +121,6 @@ def inference_detector(model,
                                class_id=pred_instances['labels'],
                                confidence=pred_instances['scores'],
                                mask=masks)
-
     labels = [
         f"{texts[class_id][0]} {confidence:0.2f}" for class_id, confidence in
         zip(detections.class_id, detections.confidence)
@@ -189,7 +189,6 @@ if __name__ == '__main__':
         texts = [[t.rstrip('\r\n')] for t in lines] + [[' ']]
     else:
         texts = [[t.strip()] for t in args.text.split(',')] + [[' ']]
-
     output_dir = args.output_dir
     if not osp.exists(output_dir):
         os.mkdir(output_dir)

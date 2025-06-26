@@ -14,7 +14,7 @@ if __name__ == "__main__":
     parser.add_argument(
         '--model',
         type=str,
-        default='../pretrained_models/open-ai-clip-vit-base-patch32')
+        default='open-ai/clip-vit-base-patch32')
     parser.add_argument('--image-dir', type=str, default='data/samples.txt')
     parser.add_argument('--out-dir', type=str, default='')
     parser.add_argument('--out-file', type=str)
@@ -27,7 +27,7 @@ if __name__ == "__main__":
     processor = AutoProcessor.from_pretrained(args.model)
 
     # padding prompts
-    device = 'cuda:0'
+    device = 'cpu'
     text_model.to(device)
     texts = tokenizer(text=[' '], return_tensors='pt', padding=True)
     texts = texts.to(device)

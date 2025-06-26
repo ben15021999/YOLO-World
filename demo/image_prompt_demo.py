@@ -116,9 +116,9 @@ def run_image(runner,
         prompt_embeddings = prompt_embeddings / prompt_embeddings.norm(
             p=2, dim=-1, keepdim=True)
         runner.model.num_test_classes = prompt_embeddings.shape[0]
-        runner.model.setembeddings(prompt_embeddings[None])
+        runner.model.set_embeddings(prompt_embeddings[None])
     else:
-        runner.model.setembeddings(None)
+        runner.model.set_embeddings(None)
         texts = [[t.strip()] for t in text.split(',')]
     data_info = dict(img_id=0, img=np.array(image), texts=texts)
     data_info = runner.pipeline(data_info)
@@ -299,10 +299,11 @@ if __name__ == '__main__':
     runner.model.eval()
 
     # init vision encoder
-    clip_model = "/group/40034/adriancheng/pretrained_models/open-ai-clip-vit-base-patch32"
+    # clip_model = "/group/40034/adriancheng/pretrained_models/open-ai-clip-vit-base-patch32"
+    clip_model = "openai/clip-vit-base-patch32"
     vision_model = CLIPVisionModelWithProjection.from_pretrained(clip_model)
     processor = AutoProcessor.from_pretrained(clip_model)
-    device = 'cuda:0'
+    device = 'cpu'
     vision_model.to(device)
 
     texts = [' ']

@@ -17,6 +17,7 @@ weight_decay = 0.05 / 2
 train_batch_size_per_gpu = 16
 # text_model_name = '../pretrained_models/clip-vit-base-patch32-projection'
 text_model_name = 'openai/clip-vit-base-patch32'
+# text_model_name = 'clip-ViT-B-32'
 # model settings
 model = dict(
     type='YOLOWorldDetector',

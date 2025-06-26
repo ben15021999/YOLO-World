@@ -10,7 +10,7 @@ if __name__ == "__main__":
     parser.add_argument(
         '--model',
         type=str,
-        default='./pretrained_models/clip-vit-base-patch32-projection')
+        default='open-ai/clip-vit-base-patch32')
     parser.add_argument('--text',
                         type=str,
                         default='data/captions/coco_class_captions.json')
@@ -24,7 +24,7 @@ if __name__ == "__main__":
     with open(args.text) as f:
         data = json.load(f)
     texts = [x[0] for x in data]
-    device = 'cuda:0'
+    device = 'cpu'
     model.to(device)
     texts = tokenizer(text=texts, return_tensors='pt', padding=True)
     texts = texts.to(device)

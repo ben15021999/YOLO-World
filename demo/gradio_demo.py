@@ -28,6 +28,7 @@ from easydeploy import model as EM
 BOUNDING_BOX_ANNOTATOR = sv.BoundingBoxAnnotator(thickness=1)
 MASK_ANNOTATOR = sv.MaskAnnotator()
 
+torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 class LabelAnnotator(sv.LabelAnnotator):
 
@@ -90,7 +91,8 @@ def run_image(runner,
     keep = nms(pred_instances.bboxes,
                pred_instances.scores,
                iou_threshold=nms_thr)
-    pred_instances = pred_instances[keep]
+    keep = keep.cpu()
+    pred_instances = pred_instances[keep].cpu()
     pred_instances = pred_instances[pred_instances.scores.float() > score_thr]
 
     if len(pred_instances.scores) > max_num_boxes:
@@ -243,7 +245,7 @@ if __name__ == '__main__':
         runner = Runner.from_cfg(cfg)
     else:
         runner = RUNNERS.build(cfg)
-
+    runner.device = 'cpu'
     runner.call_hook('before_run')
     runner.load_or_resume()
     pipeline = cfg.test_dataloader.dataset.pipeline

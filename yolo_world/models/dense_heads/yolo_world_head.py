@@ -23,6 +23,11 @@ from mmyolo.models.dense_heads import YOLOv8HeadModule, YOLOv8Head
 from mmyolo.models.utils import gt_instances_preprocess
 from mmcv.cnn.bricks import build_norm_layer
 
+from transformers import (CLIPModel, AutoTokenizer, AutoProcessor,
+                          AutoModel, CLIPTextConfig, Blip2TextModelWithProjection)
+
+from PIL import Image
+
 
 @MODELS.register_module()
 class ContrastiveHead(BaseModule):
@@ -246,6 +251,7 @@ class YOLOWorldHeadModule(YOLOv8HeadModule):
     def forward(self, img_feats: Tuple[Tensor], txt_feats: Tensor,
                 txt_masks: Tensor) -> Tuple[List]:
         """Forward features from the upstream network."""
+        print("Run YOLOWorldHeadModule")
         assert len(img_feats) == self.num_levels
         txt_feats = [txt_feats for _ in range(self.num_levels)]
         txt_masks = [txt_masks for _ in range(self.num_levels)]
@@ -340,6 +346,7 @@ class RepYOLOWorldHeadModule(YOLOWorldHeadModule):
 
     def forward(self, img_feats: Tuple[Tensor]) -> Tuple[List]:
         assert len(img_feats) == self.num_levels
+        print("Run RepYOLOWorldHeadModule")
         return multi_apply(self.forward_single, img_feats, self.cls_preds,
                            self.reg_preds, self.cls_contrasts)
 
@@ -396,6 +403,7 @@ class YOLOWorldHead(YOLOv8Head):
     def forward(self, img_feats: Tuple[Tensor], txt_feats: Tensor,
                 txt_masks: Tensor) -> Tuple[List]:
         """Forward features from the upstream network."""
+        print("Run YOLOWorldHead")
         return self.head_module(img_feats, txt_feats, txt_masks)
 
     def predict(self,
@@ -707,7 +715,6 @@ class YOLOWorldHead(YOLOv8Head):
                 empty_results.labels = scores[:, 0].int()
                 results_list.append(empty_results)
                 continue
-
             nms_pre = cfg.get('nms_pre', 100000)
             if cfg.multi_label is False:
                 scores, labels = scores.max(1, keepdim=True)
@@ -720,7 +727,6 @@ class YOLOWorldHead(YOLOv8Head):
             else:
                 scores, labels, keep_idxs, _ = filter_scores_and_topk(
                     scores, score_thr, nms_pre)
-
             results = InstanceData(scores=scores,
                                    labels=labels,
                                    bboxes=bboxes[keep_idxs])
@@ -736,7 +742,7 @@ class YOLOWorldHead(YOLOv8Head):
             if cfg.get('yolox_style', False):
                 # do not need max_per_img
                 cfg.max_per_img = len(results)
-
+            print(results)
             results = self._bbox_post_process(results=results,
                                               cfg=cfg,
                                               rescale=False,
@@ -745,5 +751,450 @@ class YOLOWorldHead(YOLOv8Head):
             results.bboxes[:, 0::2].clamp_(0, ori_shape[1])
             results.bboxes[:, 1::2].clamp_(0, ori_shape[0])
 
+            results_list.append(results)
+        return results_list
+    
+
+@MODELS.register_module()
+class OurYOLOWorldHead(YOLOv8Head):
+    """YOLO-World Head
+    """
+
+    def __init__(self, world_size=-1, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.world_size = world_size
+        self.clip_model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
+        self.clip_processor = AutoProcessor.from_pretrained("openai/clip-vit-base-patch32")
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            'openai/clip-vit-base-patch32')
+
+    """YOLO World v8 head."""
+
+    def loss(self, img_feats: Tuple[Tensor], txt_feats: Tensor,
+             txt_masks: Tensor, batch_data_samples: Union[list, dict]) -> dict:
+        """Perform forward propagation and loss calculation of the detection
+        head on the features of the upstream network."""
+
+        outs = self(img_feats, txt_feats, txt_masks)
+        # Fast version
+        loss_inputs = outs + (batch_data_samples['bboxes_labels'],
+                              batch_data_samples['img_metas'])
+        losses = self.loss_by_feat(*loss_inputs)
+
+        return losses
+
+    def loss_and_predict(
+        self,
+        img_feats: Tuple[Tensor],
+        txt_feats: Tensor,
+        txt_masks: Tensor,
+        batch_data_samples: SampleList,
+        proposal_cfg: Optional[ConfigDict] = None
+    ) -> Tuple[dict, InstanceList]:
+        """Perform forward propagation of the head, then calculate loss and
+        predictions from the features and data samples.
+        """
+        outputs = unpack_gt_instances(batch_data_samples)
+        (batch_gt_instances, batch_gt_instances_ignore,
+         batch_img_metas) = outputs
+
+        outs = self(img_feats, txt_feats, txt_masks)
+
+        loss_inputs = outs + (txt_masks, batch_gt_instances, batch_img_metas,
+                              batch_gt_instances_ignore)
+        losses = self.loss_by_feat(*loss_inputs)
+
+        predictions = self.predict_by_feat(*outs,
+                                           batch_img_metas=batch_img_metas,
+                                           cfg=proposal_cfg)
+        return losses, predictions
+
+    def forward(self, img_feats: Tuple[Tensor], txt_feats: Tensor,
+                txt_masks: Tensor) -> Tuple[List]:
+        """Forward features from the upstream network."""
+        print("Run YOLOWorldHead")
+        return self.head_module(img_feats, txt_feats, txt_masks)
+
+    def predict(self,
+                img_feats: Tuple[Tensor],
+                txt_feats: Tensor,
+                txt_masks: Tensor,
+                batch_data_samples: SampleList,
+                rescale: bool = False) -> InstanceList:
+        """Perform forward propagation of the detection head and predict
+        detection results on the features of the upstream network.
+        """
+        batch_img_metas = [
+            data_samples.metainfo for data_samples in batch_data_samples
+        ]
+        outs = self(img_feats, txt_feats, txt_masks)
+        predictions = self.predict_by_feat(*outs,
+                                           batch_img_metas=batch_img_metas,
+                                           rescale=rescale)
+        if self.clip_model is not None and self.clip_processor is not None:
+            predictions = self._clip_filtering(predictions, batch_data_samples)
+        return predictions
+    
+    def _clip_filtering(self, results, batch_data_samples, post_thresh = 0.2):
+        """Post-processing results using CLIP embeddings for verification."""
+        post_results = []
+        for batch_result, data_sample in zip(results, batch_data_samples):
+            image = Image.open(data_sample.img_path)  # PIL.Image or the actual image
+            keep_idx = []
+            for i, data in enumerate(batch_result):
+                bbox = data.bboxes
+                label = data.labels
+                score = data.scores
+                cropped_img = image.crop(bbox[0].cpu().numpy())
+                text_label = data_sample.metainfo["texts"][label[0]]
+
+                tokenizer_inputs = self.tokenizer(
+                    text_label, padding=True, return_tensors="pt")
+                processor_inputs = self.clip_processor(images=cropped_img,
+                                        return_tensors="pt", padding=True).to(self.clip_model.device)
+
+                with torch.no_grad():
+                    text_feat = self.clip_model.get_text_features(**tokenizer_inputs)
+                    img_feat = self.clip_model.get_image_features(
+                        **processor_inputs)
+
+                text_feat = text_feat / text_feat.norm(dim=-1, keepdim=True)
+                img_feat = img_feat / img_feat.norm(dim=-1, keepdim=True)
+
+                sim_score = (img_feat * text_feat).sum()
+                if sim_score.item() >= post_thresh:
+                    # filtered_bboxes.append(data)
+                    keep_idx.append(i)
+
+            post_results.append(batch_result[keep_idx])
+
+        return post_results
+
+    def aug_test(self,
+                 aug_batch_feats,
+                 aug_batch_img_metas,
+                 rescale=False,
+                 with_ori_nms=False,
+                 **kwargs):
+        """Test function with test time augmentation."""
+        raise NotImplementedError('aug_test is not implemented yet.')
+
+    def loss_by_feat(
+            self,
+            cls_scores: Sequence[Tensor],
+            bbox_preds: Sequence[Tensor],
+            bbox_dist_preds: Sequence[Tensor],
+            batch_text_masks: Tensor,
+            batch_gt_instances: Sequence[InstanceData],
+            batch_img_metas: Sequence[dict],
+            batch_gt_instances_ignore: OptInstanceList = None) -> dict:
+        """Calculate the loss based on the features extracted by the detection
+        head.
+
+        Args:
+            cls_scores (Sequence[Tensor]): Box scores for each scale level,
+                each is a 4D-tensor, the channel number is
+                num_priors * num_classes.
+            bbox_preds (Sequence[Tensor]): Box energies / deltas for each scale
+                level, each is a 4D-tensor, the channel number is
+                num_priors * 4.
+            bbox_dist_preds (Sequence[Tensor]): Box distribution logits for
+                each scale level with shape (bs, reg_max + 1, H*W, 4).
+            batch_gt_instances (list[:obj:`InstanceData`]): Batch of
+                gt_instance. It usually includes ``bboxes`` and ``labels``
+                attributes.
+            batch_img_metas (list[dict]): Meta information of each image, e.g.,
+                image size, scaling factor, etc.
+            batch_gt_instances_ignore (list[:obj:`InstanceData`], optional):
+                Batch of gt_instances_ignore. It includes ``bboxes`` attribute
+                data that is ignored during training and testing.
+                Defaults to None.
+        Returns:
+            dict[str, Tensor]: A dictionary of losses.
+        """
+        num_imgs = len(batch_img_metas)
+
+        current_featmap_sizes = [
+            cls_score.shape[2:] for cls_score in cls_scores
+        ]
+        # If the shape does not equal, generate new one
+        if current_featmap_sizes != self.featmap_sizes_train:
+            self.featmap_sizes_train = current_featmap_sizes
+
+            mlvl_priors_with_stride = self.prior_generator.grid_priors(
+                self.featmap_sizes_train,
+                dtype=cls_scores[0].dtype,
+                device=cls_scores[0].device,
+                with_stride=True)
+
+            self.num_level_priors = [len(n) for n in mlvl_priors_with_stride]
+            self.flatten_priors_train = torch.cat(mlvl_priors_with_stride,
+                                                  dim=0)
+            self.stride_tensor = self.flatten_priors_train[..., [2]]
+
+        # gt info
+        gt_info = gt_instances_preprocess(batch_gt_instances, num_imgs)
+        gt_labels = gt_info[:, :, :1]
+        gt_bboxes = gt_info[:, :, 1:]  # xyxy
+        pad_bbox_flag = (gt_bboxes.sum(-1, keepdim=True) > 0).float()
+
+        # pred info
+        flatten_cls_preds = [
+            cls_pred.permute(0, 2, 3, 1).reshape(num_imgs, -1,
+                                                 self.num_classes)
+            for cls_pred in cls_scores
+        ]
+        flatten_pred_bboxes = [
+            bbox_pred.permute(0, 2, 3, 1).reshape(num_imgs, -1, 4)
+            for bbox_pred in bbox_preds
+        ]
+        # (bs, n, 4 * reg_max)
+        flatten_pred_dists = [
+            bbox_pred_org.reshape(num_imgs, -1, self.head_module.reg_max * 4)
+            for bbox_pred_org in bbox_dist_preds
+        ]
+
+        flatten_dist_preds = torch.cat(flatten_pred_dists, dim=1)
+        flatten_cls_preds = torch.cat(flatten_cls_preds, dim=1)
+        flatten_pred_bboxes = torch.cat(flatten_pred_bboxes, dim=1)
+        flatten_pred_bboxes = self.bbox_coder.decode(
+            self.flatten_priors_train[..., :2], flatten_pred_bboxes,
+            self.stride_tensor[..., 0])
+
+        assigned_result = self.assigner(
+            (flatten_pred_bboxes.detach()).type(gt_bboxes.dtype),
+            flatten_cls_preds.detach().sigmoid(), self.flatten_priors_train,
+            gt_labels, gt_bboxes, pad_bbox_flag)
+
+        assigned_bboxes = assigned_result['assigned_bboxes']
+        assigned_scores = assigned_result['assigned_scores']
+        fg_mask_pre_prior = assigned_result['fg_mask_pre_prior']
+
+        assigned_scores_sum = assigned_scores.sum().clamp(min=1)
+
+        if batch_text_masks is not None:
+            cls_weight = batch_text_masks.view(num_imgs, 1, -1).expand(
+                -1, flatten_cls_preds.shape[1], -1).to(flatten_cls_preds)
+
+            loss_cls = self.loss_cls(flatten_cls_preds, assigned_scores)
+            _loss_cls = (loss_cls * cls_weight).sum(dim=-1)
+            loss_cls = _loss_cls.sum()
+        else:
+            loss_cls = self.loss_cls(flatten_cls_preds, assigned_scores).sum()
+        loss_cls /= assigned_scores_sum
+
+        # rescale bbox
+        assigned_bboxes /= self.stride_tensor
+        flatten_pred_bboxes /= self.stride_tensor
+
+        # select positive samples mask
+        num_pos = fg_mask_pre_prior.sum()
+        if num_pos > 0:
+            # when num_pos > 0, assigned_scores_sum will >0, so the loss_bbox
+            # will not report an error
+            # iou loss
+            prior_bbox_mask = fg_mask_pre_prior.unsqueeze(-1).repeat([1, 1, 4])
+            pred_bboxes_pos = torch.masked_select(
+                flatten_pred_bboxes, prior_bbox_mask).reshape([-1, 4])
+            assigned_bboxes_pos = torch.masked_select(
+                assigned_bboxes, prior_bbox_mask).reshape([-1, 4])
+            bbox_weight = torch.masked_select(assigned_scores.sum(-1),
+                                              fg_mask_pre_prior).unsqueeze(-1)
+            loss_bbox = self.loss_bbox(
+                pred_bboxes_pos, assigned_bboxes_pos,
+                weight=bbox_weight) / assigned_scores_sum
+
+            # dfl loss
+            pred_dist_pos = flatten_dist_preds[fg_mask_pre_prior]
+            assigned_ltrb = self.bbox_coder.encode(
+                self.flatten_priors_train[..., :2] / self.stride_tensor,
+                assigned_bboxes,
+                max_dis=self.head_module.reg_max - 1,
+                eps=0.01)
+            assigned_ltrb_pos = torch.masked_select(
+                assigned_ltrb, prior_bbox_mask).reshape([-1, 4])
+            loss_dfl = self.loss_dfl(pred_dist_pos.reshape(
+                -1, self.head_module.reg_max),
+                assigned_ltrb_pos.reshape(-1),
+                weight=bbox_weight.expand(-1,
+                                          4).reshape(-1),
+                avg_factor=assigned_scores_sum)
+        else:
+            loss_bbox = flatten_pred_bboxes.sum() * 0
+            loss_dfl = flatten_pred_bboxes.sum() * 0
+        if self.world_size == -1:
+            _, world_size = get_dist_info()
+        else:
+            world_size = self.world_size
+        return dict(loss_cls=loss_cls * num_imgs * world_size,
+                    loss_bbox=loss_bbox * num_imgs * world_size,
+                    loss_dfl=loss_dfl * num_imgs * world_size)
+
+    def predict_by_feat(self,
+                        cls_scores: List[Tensor],
+                        bbox_preds: List[Tensor],
+                        objectnesses: Optional[List[Tensor]] = None,
+                        batch_img_metas: Optional[List[dict]] = None,
+                        cfg: Optional[ConfigDict] = None,
+                        rescale: bool = True,
+                        with_nms: bool = True) -> List[InstanceData]:
+        """Transform a batch of output features extracted by the head into
+        bbox results.
+        Args:
+            cls_scores (list[Tensor]): Classification scores for all
+                scale levels, each is a 4D-tensor, has shape
+                (batch_size, num_priors * num_classes, H, W).
+            bbox_preds (list[Tensor]): Box energies / deltas for all
+                scale levels, each is a 4D-tensor, has shape
+                (batch_size, num_priors * 4, H, W).
+            objectnesses (list[Tensor], Optional): Score factor for
+                all scale level, each is a 4D-tensor, has shape
+                (batch_size, 1, H, W).
+            batch_img_metas (list[dict], Optional): Batch image meta info.
+                Defaults to None.
+            cfg (ConfigDict, optional): Test / postprocessing
+                configuration, if None, test_cfg would be used.
+                Defaults to None.
+            rescale (bool): If True, return boxes in original image space.
+                Defaults to False.
+            with_nms (bool): If True, do nms before return boxes.
+                Defaults to True.
+
+        Returns:
+            list[:obj:`InstanceData`]: Object detection results of each image
+            after the post process. Each item usually contains following keys.
+
+            - scores (Tensor): Classification scores, has a shape
+              (num_instance, )
+            - labels (Tensor): Labels of bboxes, has a shape
+              (num_instances, ).
+            - bboxes (Tensor): Has a shape (num_instances, 4),
+              the last dimension 4 arrange as (x1, y1, x2, y2).
+        """
+        print(batch_img_metas)
+        assert len(cls_scores) == len(bbox_preds)
+        if objectnesses is None:
+            with_objectnesses = False
+        else:
+            with_objectnesses = True
+            assert len(cls_scores) == len(objectnesses)
+
+        cfg = self.test_cfg if cfg is None else cfg
+        cfg = copy.deepcopy(cfg)
+
+        multi_label = cfg.multi_label
+        multi_label &= self.num_classes > 1
+        cfg.multi_label = multi_label
+
+        num_imgs = len(batch_img_metas)
+        featmap_sizes = [cls_score.shape[2:] for cls_score in cls_scores]
+
+        # If the shape does not change, use the previous mlvl_priors
+        if featmap_sizes != self.featmap_sizes:
+            self.mlvl_priors = self.prior_generator.grid_priors(
+                featmap_sizes,
+                dtype=cls_scores[0].dtype,
+                device=cls_scores[0].device)
+            self.featmap_sizes = featmap_sizes
+        flatten_priors = torch.cat(self.mlvl_priors)
+
+        mlvl_strides = [
+            flatten_priors.new_full(
+                (featmap_size.numel() * self.num_base_priors, ), stride) for
+            featmap_size, stride in zip(featmap_sizes, self.featmap_strides)
+        ]
+        flatten_stride = torch.cat(mlvl_strides)
+
+        # flatten cls_scores, bbox_preds and objectness
+        flatten_cls_scores = [
+            cls_score.permute(0, 2, 3, 1).reshape(num_imgs, -1,
+                                                  self.num_classes)
+            for cls_score in cls_scores
+        ]
+        flatten_bbox_preds = [
+            bbox_pred.permute(0, 2, 3, 1).reshape(num_imgs, -1, 4)
+            for bbox_pred in bbox_preds
+        ]
+
+        flatten_cls_scores = torch.cat(flatten_cls_scores, dim=1).sigmoid()
+        flatten_bbox_preds = torch.cat(flatten_bbox_preds, dim=1)
+        flatten_decoded_bboxes = self.bbox_coder.decode(
+            flatten_priors[None], flatten_bbox_preds, flatten_stride)
+
+        if with_objectnesses:
+            flatten_objectness = [
+                objectness.permute(0, 2, 3, 1).reshape(num_imgs, -1)
+                for objectness in objectnesses
+            ]
+            flatten_objectness = torch.cat(flatten_objectness, dim=1).sigmoid()
+        else:
+            flatten_objectness = [None for _ in range(num_imgs)]
+        # 8400
+        # print(flatten_cls_scores.shape)
+        results_list = []
+        for (bboxes, scores, objectness,
+             img_meta) in zip(flatten_decoded_bboxes, flatten_cls_scores,
+                              flatten_objectness, batch_img_metas):
+            ori_shape = img_meta['ori_shape']
+            scale_factor = img_meta['scale_factor']
+            if 'pad_param' in img_meta:
+                pad_param = img_meta['pad_param']
+            else:
+                pad_param = None
+
+            score_thr = cfg.get('score_thr', -1)
+            # yolox_style does not require the following operations
+            if objectness is not None and score_thr > 0 and not cfg.get(
+                    'yolox_style', False):
+                conf_inds = objectness > score_thr
+                bboxes = bboxes[conf_inds, :]
+                scores = scores[conf_inds, :]
+                objectness = objectness[conf_inds]
+
+            if objectness is not None:
+                # conf = obj_conf * cls_conf
+                scores *= objectness[:, None]
+
+            if scores.shape[0] == 0:
+                empty_results = InstanceData()
+                empty_results.bboxes = bboxes
+                empty_results.scores = scores[:, 0]
+                empty_results.labels = scores[:, 0].int()
+                results_list.append(empty_results)
+                continue
+            nms_pre = cfg.get('nms_pre', 100000)
+            if cfg.multi_label is False:
+                scores, labels = scores.max(1, keepdim=True)
+                scores, _, keep_idxs, results = filter_scores_and_topk(
+                    scores,
+                    score_thr,
+                    nms_pre,
+                    results=dict(labels=labels[:, 0]))
+                labels = results['labels']
+            else:
+                scores, labels, keep_idxs, _ = filter_scores_and_topk(
+                    scores, score_thr, nms_pre)
+            results = InstanceData(scores=scores,
+                                   labels=labels,
+                                   bboxes=bboxes[keep_idxs])
+
+            if rescale:
+                if pad_param is not None:
+                    results.bboxes -= results.bboxes.new_tensor([
+                        pad_param[2], pad_param[0], pad_param[2], pad_param[0]
+                    ])
+                results.bboxes /= results.bboxes.new_tensor(
+                    scale_factor).repeat((1, 2))
+
+            if cfg.get('yolox_style', False):
+                # do not need max_per_img
+                cfg.max_per_img = len(results)
+            results = self._bbox_post_process(results=results,
+                                              cfg=cfg,
+                                              rescale=False,
+                                              with_nms=with_nms,
+                                              img_meta=img_meta)
+            results.bboxes[:, 0::2].clamp_(0, ori_shape[1])
+            results.bboxes[:, 1::2].clamp_(0, ori_shape[0])
             results_list.append(results)
         return results_list

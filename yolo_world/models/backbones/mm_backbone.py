@@ -5,9 +5,10 @@ import torch
 from torch import Tensor
 from torch.nn.modules.batchnorm import _BatchNorm
 from mmengine.model import BaseModule
-from mmyolo.registry import MODELS
+from mmyolo.registry import MODELS, OPTIMIZERS
 from mmdet.utils import OptMultiConfig, ConfigType
-from transformers import (AutoTokenizer, AutoModel, CLIPTextConfig)
+from transformers import (AutoTokenizer, AutoProcessor,
+                          AutoModel, CLIPTextConfig, Blip2TextModelWithProjection)
 from transformers import CLIPTextModelWithProjection as CLIPTP
 
 
@@ -92,6 +93,7 @@ class HuggingCLIPLanguageBackbone(BaseModule):
             text_mask = torch.tensor([x != self.pad_value for x in text],
                                      requires_grad=False).to(self.model.device)
         text = self.tokenizer(text=text, return_tensors='pt', padding=True)
+
         text = text.to(device=self.model.device)
 
         if len(self.frozen_modules) > 0:
@@ -103,6 +105,7 @@ class HuggingCLIPLanguageBackbone(BaseModule):
             txt_feats = txt_outputs.text_embeds
 
         txt_feats = txt_outputs.text_embeds
+        print(txt_feats.shape)
         txt_feats = txt_feats / txt_feats.norm(p=2, dim=-1, keepdim=True)
         txt_feats = txt_feats.reshape(-1, num_per_batch[0],
                                       txt_feats.shape[-1])
@@ -110,6 +113,7 @@ class HuggingCLIPLanguageBackbone(BaseModule):
             text_mask = text_mask.reshape(-1, num_per_batch[0]).to(txt_feats)
         else:
             text_mask = None
+        # print(txt_feats.shape)
         return txt_feats, text_mask
 
     def _freeze_modules(self):
@@ -143,6 +147,7 @@ class PseudoLanguageBackbone(BaseModule):
     Args:
         text_embed_path (str): path to the text embedding file
     """
+
     def __init__(self,
                  text_embed_path: str = "",
                  test_embed_path: str = None,
@@ -198,6 +203,7 @@ class MultiModalYOLOBackbone(BaseModule):
                  init_cfg: OptMultiConfig = None) -> None:
         super().__init__(init_cfg)
         self.with_text_model = with_text_model
+        # print("image model", image_model)
         self.image_model = MODELS.build(image_model)
         if self.with_text_model:
             self.text_model = MODELS.build(text_model)
@@ -238,3 +244,89 @@ class MultiModalYOLOBackbone(BaseModule):
 
     def forward_image(self, image: Tensor) -> Tuple[Tensor]:
         return self.image_model(image)
+
+
+@MODELS.register_module()
+class ThangNDHuggingCLIPLanguageBackbone(BaseModule):
+    def __init__(self,
+                 model_name: str,
+                 frozen_modules: Sequence[str] = (),
+                 dropout: float = 0.0,
+                 add_mask: bool = False,
+                 training_use_cache: bool = False,
+                 init_cfg: OptMultiConfig = None) -> None:
+
+        super().__init__(init_cfg=init_cfg)
+
+        self.frozen_modules = frozen_modules
+        self.training_use_cache = training_use_cache
+        self.add_mask = add_mask
+        self.processor = AutoProcessor.from_pretrained(
+            "Salesforce/blip2-itm-vit-g")
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            "Salesforce/blip2-opt-2.7b")
+        self.model = Blip2TextModelWithProjection.from_pretrained(
+            "Salesforce/blip2-itm-vit-g")
+        self._freeze_modules()
+
+    def forward_tokenizer(self, texts):
+        if not hasattr(self, 'text'):
+            text = list(itertools.chain(*texts))
+            text = self.tokenizer(text=text, return_tensors='pt', padding=True)
+            self.text = text.to(device=self.model.device)
+        return self.text
+
+    def forward(self, text: List[List[str]]) -> Tensor:
+        num_per_batch = [len(t) for t in text]
+        assert max(num_per_batch) == min(num_per_batch), (
+            'number of sequences not equal in batch')
+        text = list(itertools.chain(*text))
+        if self.add_mask:
+            text_mask = torch.tensor([x != self.pad_value for x in text],
+                                     requires_grad=False).to(self.model.device)
+        inputs = self.processor(text=text, return_tensors='pt', padding=True).to(
+            device=self.model.device)
+        if len(self.frozen_modules) > 0:
+            with torch.no_grad():
+                txt_outputs = self.model(**inputs)
+                txt_feats = txt_outputs.text_embeds
+        else:
+            txt_outputs = self.model(**inputs)
+            txt_feats = txt_outputs.text_embeds
+        batch_size = len(num_per_batch)
+        embedding_dim = txt_feats.shape[-1]
+        projector = torch.nn.Linear(embedding_dim, 512).to(txt_feats.device)
+        txt_feats = projector(txt_feats)
+        # print(txt_feats.shape)
+        txt_feats = txt_feats / txt_feats.norm(p=2, dim=-1, keepdim=True)
+        txt_feats = txt_feats.reshape(-1, num_per_batch[0],
+                                      txt_feats.shape[-1])
+        if self.add_mask:
+            text_mask = text_mask.reshape(-1, num_per_batch[0]).to(txt_feats)
+        else:
+            text_mask = None
+        return txt_feats, text_mask
+
+    def _freeze_modules(self):
+
+        if len(self.frozen_modules) == 0:
+            # not freeze
+            return
+        if self.frozen_modules[0] == "all":
+            self.model.eval()
+            for _, module in self.model.named_modules():
+                module.eval()
+                for param in module.parameters():
+                    param.requires_grad = False
+            return
+        for name, module in self.model.named_modules():
+            for frozen_name in self.frozen_modules:
+                if name.startswith(frozen_name):
+                    module.eval()
+                    for param in module.parameters():
+                        param.requires_grad = False
+                    break
+
+    def train(self, mode=True):
+        super().train(mode)
+        self._freeze_modules()
