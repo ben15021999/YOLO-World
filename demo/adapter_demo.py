@@ -223,7 +223,7 @@ def inference_detector(model,
         output = model.test_step(data_batch)[0]
         pred_instances = output.pred_instances
     print(pred_instances)
-    return
+    # return
     rgb_image = Image.open(image_path).convert("RGB")
     final_results = rerank_yolo_results(
         pred_instances, texts, rgb_image, clip_model, clip_processor)

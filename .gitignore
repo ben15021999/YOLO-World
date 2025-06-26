@@ -127,3 +127,4 @@ venus_run.sh
 
 data/coco/annotations
 data/coco/val2017
+weight
