@@ -105,7 +105,6 @@ class HuggingCLIPLanguageBackbone(BaseModule):
             txt_feats = txt_outputs.text_embeds
 
         txt_feats = txt_outputs.text_embeds
-        print(txt_feats.shape)
         txt_feats = txt_feats / txt_feats.norm(p=2, dim=-1, keepdim=True)
         txt_feats = txt_feats.reshape(-1, num_per_batch[0],
                                       txt_feats.shape[-1])

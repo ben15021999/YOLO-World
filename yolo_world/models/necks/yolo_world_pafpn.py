@@ -107,7 +107,7 @@ class YOLOWorldPAFPN(YOLOv8PAFPN):
         """Forward function.
         including multi-level image features, text features: BxLxD
         """
-        print("Run YOLOWorldPAFPN")
+        # print("Run YOLOWorldPAFPN")
         assert len(img_feats) == len(self.in_channels)
         # reduce layers
         reduce_outs = []

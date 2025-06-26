@@ -251,7 +251,7 @@ class YOLOWorldHeadModule(YOLOv8HeadModule):
     def forward(self, img_feats: Tuple[Tensor], txt_feats: Tensor,
                 txt_masks: Tensor) -> Tuple[List]:
         """Forward features from the upstream network."""
-        print("Run YOLOWorldHeadModule")
+        # print("Run YOLOWorldHeadModule")
         assert len(img_feats) == self.num_levels
         txt_feats = [txt_feats for _ in range(self.num_levels)]
         txt_masks = [txt_masks for _ in range(self.num_levels)]
@@ -346,7 +346,7 @@ class RepYOLOWorldHeadModule(YOLOWorldHeadModule):
 
     def forward(self, img_feats: Tuple[Tensor]) -> Tuple[List]:
         assert len(img_feats) == self.num_levels
-        print("Run RepYOLOWorldHeadModule")
+        # print("Run RepYOLOWorldHeadModule")
         return multi_apply(self.forward_single, img_feats, self.cls_preds,
                            self.reg_preds, self.cls_contrasts)
 
@@ -403,7 +403,7 @@ class YOLOWorldHead(YOLOv8Head):
     def forward(self, img_feats: Tuple[Tensor], txt_feats: Tensor,
                 txt_masks: Tensor) -> Tuple[List]:
         """Forward features from the upstream network."""
-        print("Run YOLOWorldHead")
+        # print("Run YOLOWorldHead")
         return self.head_module(img_feats, txt_feats, txt_masks)
 
     def predict(self,
@@ -742,7 +742,6 @@ class YOLOWorldHead(YOLOv8Head):
             if cfg.get('yolox_style', False):
                 # do not need max_per_img
                 cfg.max_per_img = len(results)
-            print(results)
             results = self._bbox_post_process(results=results,
                                               cfg=cfg,
                                               rescale=False,
@@ -812,7 +811,7 @@ class OurYOLOWorldHead(YOLOv8Head):
     def forward(self, img_feats: Tuple[Tensor], txt_feats: Tensor,
                 txt_masks: Tensor) -> Tuple[List]:
         """Forward features from the upstream network."""
-        print("Run YOLOWorldHead")
+        # print("Run YOLOWorldHead")
         return self.head_module(img_feats, txt_feats, txt_masks)
 
     def predict(self,
@@ -1071,7 +1070,6 @@ class OurYOLOWorldHead(YOLOv8Head):
             - bboxes (Tensor): Has a shape (num_instances, 4),
               the last dimension 4 arrange as (x1, y1, x2, y2).
         """
-        print(batch_img_metas)
         assert len(cls_scores) == len(bbox_preds)
         if objectnesses is None:
             with_objectnesses = False
