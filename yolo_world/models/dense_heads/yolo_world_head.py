@@ -23,11 +23,17 @@ from mmyolo.models.dense_heads import YOLOv8HeadModule, YOLOv8Head
 from mmyolo.models.utils import gt_instances_preprocess
 from mmcv.cnn.bricks import build_norm_layer
 
-from transformers import (CLIPModel, AutoTokenizer, AutoProcessor,
+from transformers import (CLIPModel, AutoTokenizer, AutoProcessor, CLIPProcessor,
                           AutoModel, CLIPTextConfig, Blip2TextModelWithProjection)
 
 from PIL import Image
 
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+clip_model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
+        # self.clip_processor = AutoProcessor.from_pretrained("openai/clip-vit-base-patch32")
+clip_processor = AutoProcessor.from_pretrained("openai/clip-vit-base-patch32")
+tokenizer = AutoTokenizer.from_pretrained('openai/clip-vit-base-patch32')
 
 @MODELS.register_module()
 class ContrastiveHead(BaseModule):
@@ -762,10 +768,6 @@ class OurYOLOWorldHead(YOLOv8Head):
     def __init__(self, world_size=-1, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.world_size = world_size
-        self.clip_model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
-        self.clip_processor = AutoProcessor.from_pretrained("openai/clip-vit-base-patch32")
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            'openai/clip-vit-base-patch32')
 
     """YOLO World v8 head."""
 
@@ -830,38 +832,86 @@ class OurYOLOWorldHead(YOLOv8Head):
         predictions = self.predict_by_feat(*outs,
                                            batch_img_metas=batch_img_metas,
                                            rescale=rescale)
-        if self.clip_model is not None and self.clip_processor is not None:
+        if clip_model is not None and clip_processor is not None:
             predictions = self._clip_filtering(predictions, batch_data_samples)
         return predictions
     
-    def _clip_filtering(self, results, batch_data_samples, post_thresh = 0.2):
+    # def _clip_filtering(self, results, batch_data_samples, context_expansion = 30, post_thresh = 0.2):
+    #     """Post-processing results using CLIP embeddings for verification."""
+    #     post_results = []
+    #     for batch_result, data_sample in zip(results, batch_data_samples):
+    #         image = Image.open(data_sample.img_path)  # PIL.Image or the actual image
+    #         keep_idx = []
+    #         for i, data in enumerate(batch_result):
+    #             bbox = data.bboxes
+    #             x1, y1, x2, y2 = map(float, bbox[0])
+    #             label = data.labels
+    #             score = data.scores
+    #             cx_min = max(0, x1 - context_expansion)
+    #             cy_min = max(0, y1 - context_expansion)
+    #             cx_max = min(image.width, x2 + context_expansion)
+    #             cy_max = min(image.height, y2 + context_expansion)
+    #             context_img = image.crop((cx_min, cy_min, cx_max, cy_max))
+    #             cropped_img = image.crop(bbox[0].cpu().numpy())
+    #             text_label = data_sample.metainfo["texts"][label[0]]
+    #             promt = [f'a photo of {text_label}', f'a photo of {text_label} in its scene']
+    #             tokenizer_inputs = self.tokenizer(
+    #                 promt, padding=True, return_tensors="pt")
+    #             processor_inputs = self.clip_processor(images=[cropped_img, context_img],
+    #                                     return_tensors="pt", padding=True).to(self.clip_model.device)
+
+    #             with torch.no_grad():
+    #                 text_feat = self.clip_model.get_text_features(**tokenizer_inputs)
+    #                 img_feat = self.clip_model.get_image_features(
+    #                     **processor_inputs)
+
+    #             text_feat = text_feat / text_feat.norm(dim=-1, keepdim=True)
+    #             img_feat = img_feat / img_feat.norm(dim=-1, keepdim=True)
+
+    #             scores = (img_feat @ text_feat.T).cpu().numpy()
+    #             print(len(scores))
+    #             best_score = scores.max()
+    #             if best_score >= post_thresh:
+    #                 # filtered_bboxes.append(data)
+    #                 keep_idx.append(i)
+
+    #         post_results.append(batch_result[keep_idx])
+
+    #     return post_results
+
+    def _clip_filtering(self, results, batch_data_samples, context_expansion=30, post_thresh=0.25):
         """Post-processing results using CLIP embeddings for verification."""
         post_results = []
         for batch_result, data_sample in zip(results, batch_data_samples):
-            image = Image.open(data_sample.img_path)  # PIL.Image or the actual image
+            # PIL.Image or the actual image
+            image = Image.open(data_sample.img_path)
             keep_idx = []
             for i, data in enumerate(batch_result):
                 bbox = data.bboxes
+                x1, y1, x2, y2 = map(float, bbox[0])
                 label = data.labels
                 score = data.scores
+                cx_min = max(0, x1 - context_expansion)
+                cy_min = max(0, y1 - context_expansion)
+                cx_max = min(image.width, x2 + context_expansion)
+                cy_max = min(image.height, y2 + context_expansion)
+                context_img = image.crop((cx_min, cy_min, cx_max, cy_max))
                 cropped_img = image.crop(bbox[0].cpu().numpy())
                 text_label = data_sample.metainfo["texts"][label[0]]
+                # print(text_label)
+                prompt = [f'a photo of {text_label}']
+                processor_inputs = clip_processor(text=prompt, images=[cropped_img, context_img],
+                                                       return_tensors="pt", padding=True).to(clip_model.device)
 
-                tokenizer_inputs = self.tokenizer(
-                    text_label, padding=True, return_tensors="pt")
-                processor_inputs = self.clip_processor(images=cropped_img,
-                                        return_tensors="pt", padding=True).to(self.clip_model.device)
+                outputs = clip_model(**processor_inputs)
 
-                with torch.no_grad():
-                    text_feat = self.clip_model.get_text_features(**tokenizer_inputs)
-                    img_feat = self.clip_model.get_image_features(
-                        **processor_inputs)
+                logits_per_text = outputs.logits_per_text # this is the text-image similarity score
+                # we can take the softmax to get the label probabilities
+                probs = logits_per_text.softmax(dim=1)
 
-                text_feat = text_feat / text_feat.norm(dim=-1, keepdim=True)
-                img_feat = img_feat / img_feat.norm(dim=-1, keepdim=True)
-
-                sim_score = (img_feat * text_feat).sum()
-                if sim_score.item() >= post_thresh:
+                # print(probs)
+                best_score = probs.max()
+                if best_score >= post_thresh:
                     # filtered_bboxes.append(data)
                     keep_idx.append(i)
 
