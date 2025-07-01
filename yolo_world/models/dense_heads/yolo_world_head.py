@@ -31,6 +31,7 @@ from PIL import Image
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 clip_model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
+clip_model.to(device)
         # self.clip_processor = AutoProcessor.from_pretrained("openai/clip-vit-base-patch32")
 clip_processor = AutoProcessor.from_pretrained("openai/clip-vit-base-patch32")
 tokenizer = AutoTokenizer.from_pretrained('openai/clip-vit-base-patch32')
@@ -882,6 +883,7 @@ class OurYOLOWorldHead(YOLOv8Head):
     def _clip_filtering(self, results, batch_data_samples, context_expansion=30, post_thresh=0.25):
         """Post-processing results using CLIP embeddings for verification."""
         post_results = []
+        clip_model.eval()
         for batch_result, data_sample in zip(results, batch_data_samples):
             # PIL.Image or the actual image
             image = Image.open(data_sample.img_path)
@@ -903,14 +905,14 @@ class OurYOLOWorldHead(YOLOv8Head):
                 processor_inputs = clip_processor(text=prompt, images=[cropped_img, context_img],
                                                        return_tensors="pt", padding=True).to(clip_model.device)
 
-                outputs = clip_model(**processor_inputs)
-
-                logits_per_text = outputs.logits_per_text # this is the text-image similarity score
-                # we can take the softmax to get the label probabilities
-                probs = logits_per_text.softmax(dim=1)
+                with torch.no_grad():
+                    outputs = clip_model(**processor_inputs)
+                    logits_per_text = outputs.logits_per_text # this is the text-image similarity score
+                    # we can take the softmax to get the label probabilities
+                    probs = logits_per_text.softmax(dim=1)
 
                 # print(probs)
-                best_score = probs.max()
+                best_score = probs.max().item()
                 if best_score >= post_thresh:
                     # filtered_bboxes.append(data)
                     keep_idx.append(i)
