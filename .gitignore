@@ -128,3 +128,6 @@ venus_run.sh
 data/coco/annotations
 data/coco/val2017
 weight
+data/flickr
+data/gqa
+data/coco/train2017

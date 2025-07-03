@@ -15,6 +15,7 @@ neck_num_heads = [4, 8, _base_.last_stage_out_channels // 2 // 32]
 base_lr = 2e-3
 weight_decay = 0.05 / 2
 train_batch_size_per_gpu = 16
+load_from = 'pretrained_models/l_stage2-b3e3dc3f.pth'
 # text_model_name = '../pretrained_models/clip-vit-base-patch32-projection'
 text_model_name = 'openai/clip-vit-base-patch32'
 # model settings
@@ -73,29 +74,37 @@ train_pipeline = [
     *text_transform,
 ]
 train_pipeline_stage2 = [*_base_.train_pipeline_stage2[:-1], *text_transform]
-obj365v1_train_dataset = dict(
-    type='MultiModalDataset',
-    dataset=dict(
-        type='YOLOv5Objects365V1Dataset',
-        data_root='data/objects365v1/',
-        ann_file='annotations/objects365_train.json',
-        data_prefix=dict(img='train/'),
-        filter_cfg=dict(filter_empty_gt=False, min_size=32)),
-    class_text_path='data/texts/obj365v1_class_texts.json',
-    pipeline=train_pipeline)
+# obj365v1_train_dataset = dict(
+#     type='MultiModalDataset',
+#     dataset=dict(
+#         type='YOLOv5Objects365V1Dataset',
+#         data_root='data/objects365v1/',
+#         ann_file='annotations/objects365_train.json',
+#         data_prefix=dict(img='train/'),
+#         filter_cfg=dict(filter_empty_gt=False, min_size=32)),
+#     class_text_path='data/texts/obj365v1_class_texts.json',
+#     pipeline=train_pipeline)
 
-mg_train_dataset = dict(type='YOLOv5MixedGroundingDataset',
-                        data_root='data/mixed_grounding/',
-                        ann_file='annotations/final_mixed_train_no_coco.json',
-                        data_prefix=dict(img='gqa/images/'),
+coco_grounding_train_dataset = dict(type='YOLOv5CustomMixedGroundingDataset',
+                                    data_root='/kaggle/input/grounding/data/coco/',
+                                    ann_file='annotations/instances_train2017_vg_merged6.jsonl',
+                        data_prefix=dict(img='coco/train2017/'),
                         filter_cfg=dict(filter_empty_gt=False, min_size=32),
                         pipeline=train_pipeline)
 
 flickr_train_dataset = dict(
-    type='YOLOv5MixedGroundingDataset',
-    data_root='data/flickr/',
-    ann_file='annotations/final_flickr_separateGT_train.json',
-    data_prefix=dict(img='full_images/'),
+    type='YOLOv5CustomMixedGroundingDataset',
+    data_root='/kaggle/input/grounding/data/flickr/',
+    ann_file='flickr_train_vg7.jsonl',
+    data_prefix=dict(img='images/'),
+    filter_cfg=dict(filter_empty_gt=True, min_size=32),
+    pipeline=train_pipeline)
+
+gqa_train_dataset = dict(
+    type='YOLOv5CustomMixedGroundingDataset',
+    data_root='/kaggle/input/grounding/data/gqa/',
+    ann_file='gqa_train_vg7.jsonl',
+    data_prefix=dict(img='images/'),
     filter_cfg=dict(filter_empty_gt=True, min_size=32),
     pipeline=train_pipeline)
 
@@ -104,8 +113,8 @@ train_dataloader = dict(batch_size=train_batch_size_per_gpu,
                         dataset=dict(_delete_=True,
                                      type='ConcatDataset',
                                      datasets=[
-                                         obj365v1_train_dataset,
-                                         flickr_train_dataset, mg_train_dataset
+                                         coco_grounding_train_dataset,
+                                         flickr_train_dataset, gqa_train_dataset
                                      ],
                                      ignore_keys=['classes', 'palette']))
 
@@ -121,7 +130,7 @@ coco_val_dataset = dict(
     type='MultiModalDataset',
     dataset=dict(type='YOLOv5LVISV1Dataset',
                 #  data_root='data/coco/',
-                 data_root='/kaggle/input/data-coco/data/coco/',
+                 data_root='/kaggle/input/grounding/data/coco/',
                 #  data_root='/mydrive/data/coco/',
                  test_mode=True,
                  ann_file='lvis/lvis_v1_minival_inserted_image_name.json',
@@ -134,7 +143,7 @@ test_dataloader = val_dataloader
 
 val_evaluator = dict(type='mmdet.LVISMetric',
                     #  ann_file='data/coco/lvis/lvis_v1_minival_inserted_image_name.json',
-                     ann_file='/kaggle/input/data-coco/data/coco/lvis/lvis_v1_minival_inserted_image_name.json',
+                     ann_file='/kaggle/input/grounding/data/coco/lvis/lvis_v1_minival_inserted_image_name.json',
                     #  ann_file='/mydrive/data/coco/lvis/lvis_v1_minival_inserted_image_name.json',
                      metric='bbox')
 test_evaluator = val_evaluator
