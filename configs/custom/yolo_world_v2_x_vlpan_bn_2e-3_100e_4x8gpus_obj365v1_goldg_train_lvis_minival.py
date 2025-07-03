@@ -88,7 +88,7 @@ train_pipeline_stage2 = [*_base_.train_pipeline_stage2[:-1], *text_transform]
 coco_grounding_train_dataset = dict(type='YOLOv5CustomMixedGroundingDataset',
                                     data_root='/kaggle/input/grounding/data/coco/',
                                     ann_file='annotations/instances_train2017_vg_merged6.jsonl',
-                        data_prefix=dict(img='coco/train2017/'),
+                        data_prefix=dict(img='train2017/'),
                         filter_cfg=dict(filter_empty_gt=False, min_size=32),
                         pipeline=train_pipeline)
 
