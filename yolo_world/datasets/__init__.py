@@ -4,6 +4,7 @@ from .mm_dataset import (
 from .yolov5_obj365v1 import YOLOv5Objects365V1Dataset
 from .yolov5_obj365v2 import YOLOv5Objects365V2Dataset
 from .yolov5_mixed_grounding import YOLOv5MixedGroundingDataset
+from .yolov5_custom_mixed_grounding import YOLOv5CustomMixedGroundingDataset
 from .utils import yolow_collate
 from .transformers import *  # NOQA
 from .yolov5_v3det import YOLOv5V3DetDataset
@@ -15,5 +16,5 @@ __all__ = [
     'YOLOv5Objects365V2Dataset', 'YOLOv5MixedGroundingDataset',
     'YOLOv5V3DetDataset', 'yolow_collate',
     'YOLOv5LVISV1Dataset', 'MultiModalMixedDataset',
-    'YOLOv5GeneralGroundingDataset'
+    'YOLOv5GeneralGroundingDataset', 'YOLOv5CustomMixedGroundingDataset'
 ]
