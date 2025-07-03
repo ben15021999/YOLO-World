@@ -136,7 +136,7 @@ coco_val_dataset = dict(
                  ann_file='lvis/lvis_v1_minival_inserted_image_name.json',
                  data_prefix=dict(img=''),
                  batch_shapes_cfg=None),
-    class_text_path='data/texts/lvis_v1_class_texts.json',
+    class_text_path='/kaggle/input/grounding/data/texts/lvis_v1_class_texts.json',
     pipeline=test_pipeline)
 val_dataloader = dict(dataset=coco_val_dataset)
 test_dataloader = val_dataloader
