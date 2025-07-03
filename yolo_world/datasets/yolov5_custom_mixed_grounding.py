@@ -145,7 +145,7 @@ class YOLOv5CustomMixedGroundingDataset(BatchShapePolicyDataset, CocoDataset):
         cat2id = {}
         texts = []
         for ann in ann_info:
-            cat_name = ' '.join([img_info['phrase']])
+            cat_name = ' '.join([info['phrase'] for info in ann['phrase']])
             if cat_name not in cat2id:
                 cat2id[cat_name] = len(cat2id)
                 texts.append([cat_name])
