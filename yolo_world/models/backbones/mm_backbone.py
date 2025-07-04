@@ -73,7 +73,8 @@ class HuggingCLIPLanguageBackbone(BaseModule):
         self.add_mask = add_mask
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         clip_config = CLIPTextConfig.from_pretrained(model_name,
-                                                     attention_dropout=dropout)
+                                                     attention_dropout=dropout,
+                                                     max_position_embeddings = 256)
         self.model = CLIPTP.from_pretrained(model_name, config=clip_config)
         self._freeze_modules()
 
