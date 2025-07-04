@@ -102,7 +102,7 @@ flickr_train_dataset = dict(
 
 gqa_train_dataset = dict(
     type='YOLOv5CustomMixedGroundingDataset',
-    data_root='/kaggle/input/grounding/data/qga/',
+    data_root='/kaggle/input/grounding/data/gqa/',
     ann_file='gqa_train_vg7.jsonl',
     data_prefix=dict(img='images/'),
     filter_cfg=dict(filter_empty_gt=True, min_size=32),
