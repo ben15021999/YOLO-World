@@ -43,8 +43,7 @@ def parse_args():
     parser.add_argument('image', help='image path, include image file or dir.')
     parser.add_argument(
         'text',
-        help=
-        'text prompts, including categories separated by a comma or a txt file with each line as a prompt.'
+        help='text prompts, including categories separated by a comma or a txt file with each line as a prompt.'
     )
     parser.add_argument('--topk',
                         default=100,
@@ -102,7 +101,7 @@ def inference_detector(model,
     with autocast(enabled=use_amp), torch.no_grad():
         output = model.test_step(data_batch)[0]
         pred_instances = output.pred_instances
-    
+
     pred_instances = pred_instances[pred_instances.scores.float() >
                                     score_thr]
 
