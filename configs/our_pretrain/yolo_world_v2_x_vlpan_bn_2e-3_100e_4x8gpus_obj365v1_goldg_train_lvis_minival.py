@@ -134,7 +134,7 @@ test_dataloader = val_dataloader
 
 val_evaluator = dict(type='mmdet.LVISMetric',
                     #  ann_file='data/coco/lvis/lvis_v1_minival_inserted_image_name.json',
-                     ann_file='/kaggle/input/data-coco/data/coco/lvis/lvis_v1_minival_inserted_image_name.json',
+                     ann_file='/kaggle/input/grounding/data/coco/lvis/lvis_v1_minival_inserted_image_name.json',
                     #  ann_file='/mydrive/data/coco/lvis/lvis_v1_minival_inserted_image_name.json',
                      metric='bbox')
 test_evaluator = val_evaluator
