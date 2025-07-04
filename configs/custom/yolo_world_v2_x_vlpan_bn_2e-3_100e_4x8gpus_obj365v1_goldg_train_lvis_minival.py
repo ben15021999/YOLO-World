@@ -38,7 +38,7 @@ model = dict(
               embed_channels=neck_embed_channels,
               num_heads=neck_num_heads,
               block_cfg=dict(type='MaxSigmoidCSPLayerWithTwoConv')),
-    bbox_head=dict(type='OurYOLOWorldHead',
+    bbox_head=dict(type='YOLOWorldHead',
                    head_module=dict(type='YOLOWorldHeadModule',
                                     use_bn_head=True,
                                     embed_dims=text_channels,
