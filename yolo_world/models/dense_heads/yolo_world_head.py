@@ -28,16 +28,8 @@ from transformers import (CLIPModel, AutoTokenizer, CLIPProcessor,
 
 from PIL import Image
 
-blip_processor = BlipProcessor.from_pretrained(
-    "Salesforce/blip-image-captioning-large")
-blip_model = BlipForConditionalGeneration.from_pretrained(
-    "Salesforce/blip-image-captioning-large")
-
 # Or other CLIP variants like "ViT-Large/patch14"
 model_name = "openai/clip-vit-base-patch32"
-clip_model = CLIPModel.from_pretrained(model_name)
-clip_processor = CLIPProcessor.from_pretrained(model_name)
-clip_tokenizer = AutoTokenizer.from_pretrained(model_name)
 
 @MODELS.register_module()
 class ContrastiveHead(BaseModule):
@@ -777,6 +769,14 @@ class OurYOLOWorldHead(YOLOv8Head):
     def __init__(self, world_size=-1, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.world_size = world_size
+        self.blip_processor = BlipProcessor.from_pretrained(
+            "Salesforce/blip-image-captioning-large")
+        self.blip_model = BlipForConditionalGeneration.from_pretrained(
+            "Salesforce/blip-image-captioning-large")
+        
+        self.clip_model = CLIPModel.from_pretrained(model_name)
+        self.clip_processor = CLIPProcessor.from_pretrained(model_name)
+        self.clip_tokenizer = AutoTokenizer.from_pretrained(model_name)
 
     """YOLO World v8 head."""
 
@@ -841,13 +841,13 @@ class OurYOLOWorldHead(YOLOv8Head):
         predictions = self.predict_by_feat(*outs,
                                            batch_img_metas=batch_img_metas,
                                            rescale=rescale)
-        if blip_model is not None and blip_processor is not None:
+        if self.blip_model is not None and self.blip_processor is not None:
             predictions = self._blip_filtering(predictions, batch_data_samples)
         return predictions
 
     def _blip_filtering(self, results, batch_data_samples, post_thresh=0.5):
         post_results = []
-        blip_model.eval()
+        self.blip_model.eval()
         for batch_result, data_sample in zip(results, batch_data_samples):
             # PIL.Image or the actual image
             image = Image.open(data_sample.img_path)
@@ -863,15 +863,18 @@ class OurYOLOWorldHead(YOLOv8Head):
                     continue
                 # print(text_label)
                 prompt = 'a image of'
-                inputs = blip_processor(cropped_img, prompt, return_tensors="pt")
-                output = blip_model.generate(**inputs)
-                caption = blip_processor.batch_decode(output, skip_special_tokens=True)[0].strip()
+                inputs = self.blip_processor(cropped_img, prompt, return_tensors="pt")
+                inputs = inputs.to(self.blip_model.device)
+                output = self.blip_model.generate(**inputs)
+                caption = self.blip_processor.batch_decode(
+                    output, skip_special_tokens=True)[0].strip()
                 # print(probs)
                 caption = caption[len(prompt):]
-                inputs = clip_tokenizer(
+                inputs = self.clip_tokenizer(
                     text=[text_label, caption], return_tensors="pt", padding=True, truncation=True)
+                inputs = inputs.to(self.clip_model.device)
                 with torch.no_grad():
-                    text_features = clip_model.get_text_features(**inputs)
+                    text_features = self.clip_model.get_text_features(**inputs)
                 
                 label_embedding = text_features[0]
                 caption_embedding = text_features[1]
