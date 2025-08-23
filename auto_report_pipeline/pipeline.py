@@ -199,7 +199,7 @@ def main():
             progress_bar.update()
             continue
         with open(f'{output_dir}/script_final.txt', 'a') as f:
-            f.write(f'{sentence['text']}\n')
+            f.write(f'{sentence["text"]}\n')
         # for item in sorted_scores[:]:
         #     if item['score'] == 0.0:
         #         continue
