@@ -7,7 +7,7 @@ import pickle
 from mmengine.dataset import Compose
 from mmdet.apis import init_detector
 from mmengine.utils import ProgressBar
-from moviepy import VideoFileClip, ImageSequenceClip
+# from moviepy import ImageSequenceClip
 from mmyolo.registry import VISUALIZERS
 from transformers import AutoProcessor, Blip2ForImageTextRetrieval
 import os.path as osp
@@ -103,14 +103,14 @@ def inference_detector(model, image, texts, test_pipeline, target_dir, image_nam
     return output
 
 
-def extract_frames_between(video_path, start_time, end_time, fps=1):
-    clip = VideoFileClip(video_path).subclipped(start_time, end_time)
-    return list(clip.iter_frames(fps=fps))
+# def extract_frames_between(video_path, start_time, end_time, fps=1):
+#     clip = VideoFileClip(video_path).subclipped(start_time, end_time)
+#     return list(clip.iter_frames(fps=fps))
 
 
-def save_frames_as_video(frames, output_path, fps=1):
-    clip = ImageSequenceClip(frames, fps=fps)
-    clip.write_videofile(output_path, codec='libx264')
+# def save_frames_as_video(frames, output_path, fps=1):
+#     clip = ImageSequenceClip(frames, fps=fps)
+#     clip.write_videofile(output_path, codec='libx264')
 
 
 def get_top_k(scores, k=5):
