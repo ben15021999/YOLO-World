@@ -156,6 +156,7 @@ def main():
         # if not osp.exists(target_dir):
         #     os.makedirs(target_dir)
         sen = sentence['text'].split(' ')
+        print(sentence['text'])
         if len(sen) > 77:
             text = ' '.join(sen[:77])
             texts = [[text]]
