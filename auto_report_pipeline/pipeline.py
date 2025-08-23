@@ -148,7 +148,7 @@ def main():
     # visualizer = VISUALIZERS.build(
     #     dict(type='DetLocalVisualizer', name='visualizer'))
 
-    with open("/Volumes/Data/data_football/Argentina_v_France_1stHalf.pkl", "rb") as f:
+    with open(args.transcript, "rb") as f:
         sentences = pickle.load(f)
     progress_bar = ProgressBar(len(sentences))
     for sentence in sentences:
