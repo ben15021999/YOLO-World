@@ -8,10 +8,17 @@ from .yolo_bricks import (
     ImagePoolingAttentionModule,
     RepConvMaxSigmoidCSPLayerWithTwoConv,
     RepMaxSigmoidCSPLayerWithTwoConv
-    )
+)
+
+from .our_bricks import (
+    SoftmaxSigmoidAttnBlock,
+    SoftmaxSigmoidCSPLayerWithTwoConv,
+)
 
 __all__ = ['CSPLayerWithTwoConv',
            'MaxSigmoidAttnBlock',
+           'SoftmaxSigmoidAttnBlock',
+           'SoftmaxSigmoidCSPLayerWithTwoConv',
            'MaxSigmoidCSPLayerWithTwoConv',
            'RepConvMaxSigmoidCSPLayerWithTwoConv',
            'RepMaxSigmoidCSPLayerWithTwoConv',

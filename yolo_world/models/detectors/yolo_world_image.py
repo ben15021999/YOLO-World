@@ -221,6 +221,7 @@ class YOLOWorldImageDetector(YOLODetector):
         """Network forward process. Usually includes backbone, neck and head
         forward without any post-processing.
         """
+        print("run YOLOWorldImageDetector")
         img_feats, txt_feats = self.extract_feat(batch_inputs,
                                                  batch_data_samples)
         results = self.bbox_head.forward(img_feats, txt_feats)

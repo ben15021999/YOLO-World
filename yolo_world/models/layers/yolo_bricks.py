@@ -251,7 +251,7 @@ class RepConvMaxSigmoidAttnBlock(BaseModule):
         x = x * attn_weight
         x = x.view(B, -1, H, W)
         return x
-
+    
 
 @MODELS.register_module()
 class MaxSigmoidCSPLayerWithTwoConv(CSPLayerWithTwoConv):

@@ -131,3 +131,4 @@ weight
 data/flickr
 data/gqa
 data/coco/train2017
+pipeline_outputs

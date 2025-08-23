@@ -23,8 +23,8 @@ from mmyolo.models.dense_heads import YOLOv8HeadModule, YOLOv8Head
 from mmyolo.models.utils import gt_instances_preprocess
 from mmcv.cnn.bricks import build_norm_layer
 
-from transformers import (CLIPModel, AutoTokenizer, CLIPProcessor,
-                          BlipProcessor, BlipForConditionalGeneration)
+from mmdet.structures.bbox import (cat_boxes, get_box_tensor, get_box_wh,
+                                   scale_boxes)
 
 from PIL import Image
 
@@ -769,14 +769,14 @@ class OurYOLOWorldHead(YOLOv8Head):
     def __init__(self, world_size=-1, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.world_size = world_size
-        self.blip_processor = BlipProcessor.from_pretrained(
-            "Salesforce/blip-image-captioning-large")
-        self.blip_model = BlipForConditionalGeneration.from_pretrained(
-            "Salesforce/blip-image-captioning-large")
+        # self.blip_processor = BlipProcessor.from_pretrained(
+        #     "Salesforce/blip-image-captioning-large")
+        # self.blip_model = BlipForConditionalGeneration.from_pretrained(
+        #     "Salesforce/blip-image-captioning-large")
         
-        self.clip_model = CLIPModel.from_pretrained(model_name)
-        self.clip_processor = CLIPProcessor.from_pretrained(model_name)
-        self.clip_tokenizer = AutoTokenizer.from_pretrained(model_name)
+        # self.clip_model = CLIPModel.from_pretrained(model_name)
+        # self.clip_processor = CLIPProcessor.from_pretrained(model_name)
+        # self.clip_tokenizer = AutoTokenizer.from_pretrained(model_name)
 
     """YOLO World v8 head."""
 
@@ -841,13 +841,12 @@ class OurYOLOWorldHead(YOLOv8Head):
         predictions = self.predict_by_feat(*outs,
                                            batch_img_metas=batch_img_metas,
                                            rescale=rescale)
-        if self.blip_model is not None and self.blip_processor is not None:
-            predictions = self._blip_filtering(predictions, batch_data_samples)
+        # if self.clip_model:
+        #     predictions = self._clip_filtering(predictions, batch_data_samples)
         return predictions
 
-    def _blip_filtering(self, results, batch_data_samples, post_thresh=0.5):
+    def _clip_filtering(self, results, batch_data_samples, post_thresh=0.20):
         post_results = []
-        self.blip_model.eval()
         for batch_result, data_sample in zip(results, batch_data_samples):
             # PIL.Image or the actual image
             image = Image.open(data_sample.img_path)
@@ -861,49 +860,21 @@ class OurYOLOWorldHead(YOLOv8Head):
                 if len(text_label) == 0:
                     keep_idx.append(i)
                     continue
-                # print(text_label)
-                prompt = 'a image of'
-                inputs = self.blip_processor(cropped_img, prompt, return_tensors="pt")
-                inputs = inputs.to(self.blip_model.device)
-                output = self.blip_model.generate(**inputs)
-                caption = self.blip_processor.batch_decode(
-                    output, skip_special_tokens=True)[0].strip()
-                # print(probs)
-                caption = caption[len(prompt):]
-                inputs = self.clip_tokenizer(
-                    text=[text_label, caption], return_tensors="pt", padding=True, truncation=True)
-                inputs = inputs.to(self.clip_model.device)
-                with torch.no_grad():
-                    text_features = self.clip_model.get_text_features(**inputs)
+                prompt = [
+                    f'a photo of {text}' for text in data_sample.metainfo["texts"][:-1]]
+                print(prompt)
+                inputs = self.clip_processor(text=prompt,
+                                   images=cropped_img, return_tensors="pt", padding=True)
                 
-                label_embedding = text_features[0]
-                caption_embedding = text_features[1]
 
-                # Cosine similarity
-                similarity = F.cosine_similarity(label_embedding, caption_embedding, dim=0)
-                # # Normalize embeddings for cosine similarity
-                # embedding_label = text_features[0] / text_features[0].norm(p=2)
-                # embedding_caption = text_features[1] / text_features[1].norm(p=2)
-
-                # # Compute cosine similarity
-                # cosine_similarity = embedding_label @ embedding_caption.T
-                # similarity = cosine_similarity.item()
-                # print(text_label, caption, similarity.item())
-
-                # inputs = clip_processor(
-                #     text=[f"an image of {text_label}"], images=cropped_img, return_tensors="pt", padding=True
-                # )
-                # with torch.no_grad():
-                #     outputs = clip_model(**inputs)
-                # # shape [1, hidden_dim]
-                # image_embeds = outputs.image_embeds
-                # # shape [1, hidden_dim]
-                # text_embeds = outputs.text_embeds
-                # similarity = text_embeds @ image_embeds.T
-                # similarity = similarity.item()
-                # print(text_label, similarity)
-                if similarity >= post_thresh:
-                    # filtered_bboxes.append(data)
+                with torch.no_grad():
+                    outputs = self.clip_model(**inputs)
+                
+                logits_per_image = outputs.logits_per_image
+                probs = logits_per_image.softmax(dim=1)
+                print(probs)
+                index = probs.argmax(dim=1)
+                if (index == label[0]):
                     keep_idx.append(i)
             if len(keep_idx) > 0:
                 post_results.append(batch_result[keep_idx])
@@ -1237,3 +1208,36 @@ class OurYOLOWorldHead(YOLOv8Head):
 
             results_list.append(results)
         return results_list
+    
+    # def custom_bbox_post_process(results: InstanceData,
+    #                        cfg: ConfigDict,
+    #                        rescale: bool = False,
+    #                        with_nms: bool = True,
+    #                        img_meta: Optional[dict] = None) -> InstanceData:
+    #     if rescale:
+    #         assert img_meta.get('scale_factor') is not None
+    #         scale_factor = [1 / s for s in img_meta['scale_factor']]
+    #         results.bboxes = scale_boxes(results.bboxes, scale_factor)
+
+    #     if hasattr(results, 'score_factors'):
+    #         # TODO： Add sqrt operation in order to be consistent with
+    #         #  the paper.
+    #         score_factors = results.pop('score_factors')
+    #         results.scores = results.scores * score_factors
+
+    #     # filter small size bboxes
+    #     if cfg.get('min_bbox_size', -1) >= 0:
+    #         w, h = get_box_wh(results.bboxes)
+    #         valid_mask = (w > cfg.min_bbox_size) & (h > cfg.min_bbox_size)
+    #         if not valid_mask.all():
+    #             results = results[valid_mask]
+    #     # TODO: deal with `with_nms` and `nms_cfg=None` in test_cfg
+    #     if with_nms and results.bboxes.numel() > 0:
+    #         bboxes = get_box_tensor(results.bboxes)
+    #         det_bboxes, keep_idxs = batched_nms(bboxes, results.scores,
+    #                                             results.labels, cfg.nms)
+    #         results = results[keep_idxs]
+    #         # some nms would reweight the score, such as softnms
+    #         results.scores = det_bboxes[:, -1]
+    #         results = results[:cfg.max_per_img]
+    #     return results

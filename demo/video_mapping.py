@@ -2,10 +2,10 @@
 # This file is modifef from mmyolo/demo/video_demo.py
 import argparse
 
+import itertools
 import cv2
 import mmcv
 import torch
-import pickle
 from mmengine.dataset import Compose
 from mmdet.apis import init_detector
 from mmengine.utils import track_iter_progress
@@ -20,11 +20,10 @@ def parse_args():
     parser.add_argument('video', help='video file path')
     parser.add_argument(
         'text',
-        help=
-        'text prompts, including categories separated by a comma or a txt file with each line as a prompt.'
+        help='text prompts, including categories separated by a comma or a txt file with each line as a prompt.'
     )
     parser.add_argument('--device',
-                        default='cuda:0',
+                        default='cpu',
                         help='device used for inference')
     parser.add_argument('--score-thr',
                         default=0.1,
@@ -60,37 +59,38 @@ def main():
         0].type = 'mmdet.LoadImageFromNDArray'
     test_pipeline = Compose(model.cfg.test_dataloader.dataset.pipeline)
 
-    # if args.text.endswith('.txt'):
-    #     with open(args.text) as f:
-    #         lines = f.readlines()
-    #     texts = [[t.rstrip('\r\n')] for t in lines] + [[' ']]
-    # else:
-    #     texts = [[t.strip()] for t in args.text.split(',')] + [[' ']]
+    if args.text.endswith('.txt'):
+        with open(args.text) as f:
+            lines = f.readlines()
+        texts = [[t.rstrip('\r\n')] for t in lines] + [[' ']]
+    else:
+        texts = [[t.strip()] for t in args.text.split(',')] + [[' ']]
 
     # reparameterize texts
-    visualizer = VISUALIZERS.build(model.cfg.visualizer)
+    model.reparameterize(texts)
 
     # init visualizer
+    visualizer = VISUALIZERS.build(model.cfg.visualizer)
     # the dataset_meta is loaded from the checkpoint and
     # then pass to the model in init_detector
-    visualizer.dataset_meta = model.dataset_meta
+    visualizer.dataset_meta = dict(classes=tuple(
+        itertools.chain(*texts)), palette=None)
 
     video_reader = mmcv.VideoReader(args.video)
     video_writer = None
     if args.out:
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
         video_writer = cv2.VideoWriter(
-            args.out, fourcc,
-            # video_reader.fps,
-            3.0,
+            args.out, fourcc, video_reader.fps,
             (video_reader.width, video_reader.height))
 
-    for frame in track_iter_progress(video_reader):
+    for frame in video_reader:
         result = inference_detector(model,
                                     frame,
                                     texts,
                                     test_pipeline,
                                     score_thr=args.score_thr)
+        # print(result)
         visualizer.add_datasample(name='video',
                                   image=frame,
                                   data_sample=result,

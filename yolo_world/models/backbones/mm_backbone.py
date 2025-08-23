@@ -11,7 +11,6 @@ from transformers import (AutoTokenizer, AutoProcessor,
                           AutoModel, CLIPTextConfig, Blip2TextModelWithProjection)
 from transformers import CLIPTextModelWithProjection as CLIPTP
 
-
 @MODELS.register_module()
 class HuggingVisionBackbone(BaseModule):
     def __init__(self,
@@ -93,18 +92,20 @@ class HuggingCLIPLanguageBackbone(BaseModule):
             text_mask = torch.tensor([x != self.pad_value for x in text],
                                      requires_grad=False).to(self.model.device)
         text = self.tokenizer(text=text, return_tensors='pt', padding=True)
-
+        # print(text)
         text = text.to(device=self.model.device)
 
         if len(self.frozen_modules) > 0:
             with torch.no_grad():
                 txt_outputs = self.model(**text)
                 txt_feats = txt_outputs.text_embeds
+                # txt_feats = self.clip_model.encode(text)
         else:
             txt_outputs = self.model(**text)
             txt_feats = txt_outputs.text_embeds
-
-        txt_feats = txt_outputs.text_embeds
+            # txt_feats = self.clip_model.encode(text)
+        # print(txt_feats)
+        # txt_feats = torch.from_numpy(txt_feats)
         txt_feats = txt_feats / txt_feats.norm(p=2, dim=-1, keepdim=True)
         txt_feats = txt_feats.reshape(-1, num_per_batch[0],
                                       txt_feats.shape[-1])
@@ -283,20 +284,19 @@ class ThangNDHuggingCLIPLanguageBackbone(BaseModule):
         if self.add_mask:
             text_mask = torch.tensor([x != self.pad_value for x in text],
                                      requires_grad=False).to(self.model.device)
-        inputs = self.processor(text=text, return_tensors='pt', padding=True).to(
-            device=self.model.device)
+        text = self.tokenizer(text=text, return_tensors='pt', padding=True)
+
+        text = text.to(device=self.model.device)
+
         if len(self.frozen_modules) > 0:
             with torch.no_grad():
-                txt_outputs = self.model(**inputs)
+                txt_outputs = self.model(**text)
                 txt_feats = txt_outputs.text_embeds
         else:
-            txt_outputs = self.model(**inputs)
+            txt_outputs = self.model(**text)
             txt_feats = txt_outputs.text_embeds
-        batch_size = len(num_per_batch)
-        embedding_dim = txt_feats.shape[-1]
-        projector = torch.nn.Linear(embedding_dim, 512).to(txt_feats.device)
-        txt_feats = projector(txt_feats)
-        # print(txt_feats.shape)
+
+        txt_feats = txt_outputs.text_embeds
         txt_feats = txt_feats / txt_feats.norm(p=2, dim=-1, keepdim=True)
         txt_feats = txt_feats.reshape(-1, num_per_batch[0],
                                       txt_feats.shape[-1])
@@ -304,6 +304,7 @@ class ThangNDHuggingCLIPLanguageBackbone(BaseModule):
             text_mask = text_mask.reshape(-1, num_per_batch[0]).to(txt_feats)
         else:
             text_mask = None
+        # print(txt_feats.shape)
         return txt_feats, text_mask
 
     def _freeze_modules(self):
