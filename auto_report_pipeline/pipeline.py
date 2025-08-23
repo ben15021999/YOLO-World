@@ -65,7 +65,7 @@ def parse_args():
     return args
 
 
-def inference_detector(model, image, texts, test_pipeline, target_dir, image_name, score_thr=0.3):
+def inference_detector(model, image, texts, test_pipeline, image_name, score_thr=0.3):
     data_info = dict(img_id=0, img=image, texts=texts)
     data_info = test_pipeline(data_info)
     data_batch = dict(inputs=data_info['inputs'].unsqueeze(0),
@@ -152,9 +152,9 @@ def main():
         sentences = pickle.load(f)
     progress_bar = ProgressBar(len(sentences))
     for sentence in sentences:
-        target_dir = osp.join(output_dir, sentence['text'])
-        if not osp.exists(target_dir):
-            os.makedirs(target_dir)
+        # target_dir = osp.join(output_dir, sentence['text'])
+        # if not osp.exists(target_dir):
+        #     os.makedirs(target_dir)
         texts = [[sentence['text']]]
         # reparameterize texts
         model.reparameterize(texts)
@@ -187,7 +187,6 @@ def main():
                                                         frame,
                                                         texts,
                                                         test_pipeline,
-                                                        target_dir,
                                                         i,
                                                         score_thr=args.score_thr)))
         sorted_scores = get_top_k(scores=scores)
