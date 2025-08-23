@@ -194,7 +194,7 @@ def main():
         if (sorted_scores[0]['score'] == 0.0):
             progress_bar.update()
             continue
-        with open(f'{args.out}/script.txt', 'a') as f:
+        with open(f'{output_dir}/script.txt', 'a') as f:
             f.write(f'{texts[0][0]}\n')
         # for item in sorted_scores[:]:
         #     if item['score'] == 0.0:
