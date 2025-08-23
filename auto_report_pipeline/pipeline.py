@@ -194,18 +194,20 @@ def main():
         if (sorted_scores[0]['score'] == 0.0):
             progress_bar.update()
             continue
-        for item in sorted_scores[:]:
-            if item['score'] == 0.0:
-                continue
-            inputs = processor_blip2(images=frame, text=list(itertools.chain(*texts))[0],
-                                     return_tensors="pt").to(args.device, torch.float16)
-            itm_out = model_blip2(**inputs, use_image_text_matching_head=True)
-            logits_per_image = torch.nn.functional.softmax(
-                itm_out.logits_per_image, dim=1)
-            probs = logits_per_image.softmax(dim=1)
-            if probs[0][0] < probs[0][1]:
-                with open(f'{args.out}/script.txt', 'a') as f:
-                    f.write(texts[0][0])
+        with open(f'{args.out}/script.txt', 'a') as f:
+            f.write(f'{texts[0][0]}\n')
+        # for item in sorted_scores[:]:
+        #     if item['score'] == 0.0:
+        #         continue
+        #     inputs = processor_blip2(images=frame, text=list(itertools.chain(*texts))[0],
+        #                              return_tensors="pt").to(args.device, torch.float16)
+        #     itm_out = model_blip2(**inputs, use_image_text_matching_head=True)
+        #     logits_per_image = torch.nn.functional.softmax(
+        #         itm_out.logits_per_image, dim=1)
+        #     probs = logits_per_image.softmax(dim=1)
+        #     if probs[0][0] < probs[0][1]:
+        #         with open(f'{args.out}/script.txt', 'a') as f:
+        #             f.write(texts[0][0])
 
         progress_bar.update()
 
