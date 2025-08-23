@@ -155,7 +155,12 @@ def main():
         # target_dir = osp.join(output_dir, sentence['text'])
         # if not osp.exists(target_dir):
         #     os.makedirs(target_dir)
-        texts = [[sentence['text']]]
+        sen = sentence['text'].split(' ')
+        if len(sen) > 77:
+            text = ' '.join(sen[:77])
+            texts = [[text]]
+        else:
+            texts = [[sentence['text']]]
         # reparameterize texts
         model.reparameterize(texts)
         visualizer.dataset_meta = dict(classes=texts, palette=None)
